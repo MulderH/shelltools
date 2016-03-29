@@ -1,0 +1,143 @@
+#!/usr/bin/perl
+=pod
+
+SBX chooser
+
+=head1 NAME
+
+  sbx - Tool voor menu-selectie sandboxes.
+
+=head1 DESCRIPTION
+
+Keuze sandbox en het starten van de shell omgeving.
+
+=head1 .sbxconfig
+
+Configuratie file for your shell environment.
+
+vb
+   [foo]
+      SBX=$HOME/sbx
+
+=over 12
+
+=item C<[item]>
+
+Menu item shortname
+
+=item C<SBX>
+
+    Root of your sandbox
+    The 'sb' alias return you to your sandbox.
+
+
+=back
+
+=head1 LICENSE
+
+=head1 AUTHOR
+
+Hans Mulder - H_Mulder@belastingdienst.nl
+
+=head1 SEE ALSO
+
+=cut
+
+#
+# GLOBALS in GLB
+
+my %GLB={
+            hostname => 'localhost'
+        };
+$GLB{hostname}=`hostname`;
+$GLB{uname}=`uname`;
+chomp $GLB{uname};
+chomp $GLB{hostname};
+
+#
+#CONFIG
+#
+package CONFIG;
+use Data::Dumper;
+
+my %CFG=();
+sub  trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
+sub import()
+{
+  my $config_file="$ENV{HOME}/.sbxconfig";
+  my $label="global";#default environment
+  open CONFIG, $config_file or die "Could not open '$config_file':$!";
+  while( <CONFIG> ){
+    chomp;
+    next if /^#/;#skip comment starting with #
+    #$label = s/(^\[)||(\]$)// if /^\[/ ;
+    if( m/^\[/ ){
+      s/(^\[)||(\]$)//g;
+      $label=$_;
+    };
+    if( m/=/ ){
+      my ($var,$val)=split(/=/);
+      $CFG{$label}{trim $var}=$val;
+    }
+  }
+  #
+	print "user_config".Dumper(\%CFG)."\n";
+    
+  close CONFIG;
+}
+
+#
+#MENU
+#
+package MENU;
+sub get_items()
+{
+  #TODO filter op menu
+  return keys %CFG;
+}
+sub menu()
+{
+  my @options=get_items();
+
+ 	#!TODO enter toets geeft keuze en gaat dus door.
+	my $nr=1;
+	#print "user_menu".Dumper(\%menu)."\n";
+	foreach(@options){
+		print $nr++.") $_\n";
+	}
+
+	my $choice;
+	while(1){
+        	print "Select one [1..".($nr-1).']?';
+        	$choice=<STDIN>;
+		chomp $choice;
+		$choice=1 if $choice eq '';#default
+		last if $choice > 0 and $choice < $nr ;
+	};
+
+	return $options[$choice-1];
+}
+
+#
+#Environment
+#
+package ENV;
+sub create()
+{
+  #TODO create environment
+}
+
+sub start()
+{
+  #TODO start shell
+}
+#
+# MAIN
+# 
+package MAIN;
+
+print "Start\n";
+CONFIG::import();
+my $choice=MENU::menu();
+print "choice=$choice\n";
+
