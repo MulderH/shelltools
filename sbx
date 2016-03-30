@@ -71,19 +71,25 @@ sub import()
     chomp;
     next if /^#/;#skip comment starting with #
     #$label = s/(^\[)||(\]$)// if /^\[/ ;
+    s/[^\\]#.*//;  #strip comment
     if( m/^\[/ ){
       s/(^\[)||(\]$)//g;
       $label=$_;
     };
     if( m/=/ ){
       my ($var,$val)=split(/=/);
-      $CFG{$label}{trim $var}=$val;
+      $CFG{$label}{trim $var}= trim $val;
     }
   }
   #
 	print "user_config".Dumper(\%CFG)."\n";
     
   close CONFIG;
+}
+sub get_group($)
+{
+  my $group=shift;
+  return $CFG{$group};
 }
 
 #
@@ -93,7 +99,11 @@ package MENU;
 sub get_items()
 {
   #TODO filter op menu
-  return keys %CFG;
+  my @items=();
+  foreach my $grp ( keys %CFG ){
+    push @items, $grp if $CFG{$grp}{menu} eq 'true';
+  }
+  return @items;
 }
 sub menu()
 {
@@ -122,14 +132,22 @@ sub menu()
 #Environment
 #
 package ENV;
-sub create()
+use Data::Dumper;
+sub create($)
 {
+  my $group=shift;
   #TODO create environment
+  my $env=CONFIG::get_group($group);
+	print "DBG:env".Dumper($env)."\n";
+  foreach( keys $env ) {
+    $ENV{$_}=$env->{$_};
+  }
 }
 
 sub start()
 {
   #TODO start shell
+  system('sh');
 }
 #
 # MAIN
@@ -140,4 +158,5 @@ print "Start\n";
 CONFIG::import();
 my $choice=MENU::menu();
 print "choice=$choice\n";
-
+ENV::create($choice);
+ENV::start();
