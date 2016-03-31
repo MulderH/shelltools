@@ -277,11 +277,22 @@ sub start($)
   for( $env->{'cfg.type'} ){
     shell_sh()  if /^sh$/ ;
     shell_dos()  if /^dos$/ ;
+    shell_bash()  if /^bash$/ ;
     system( '/cygdrive/c/Windows/System32/cmd.exe')  if /^cdos$/ ;
     break;
   }
   #print "DBG:chdir( $ENV{SBXROOT} )\n";
   #system('sh');
+}
+
+sub shell_bash()
+{
+  if( not $ENV{ENV} and -f "$ENV{SBXROOT}/.sbx_env" ){
+	  $ENV{ENV}=$ENV{SBXROOT}.'/.sbx_env';
+  }
+  $ENV{BASH_ENV}=$ENV{ENV};
+  $ENV{debian_chroot}=$ENV{SBX};
+  system('bash','--rcfile',$ENV{ENV});
 }
 
 sub shell_sh()
