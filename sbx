@@ -53,6 +53,37 @@ $GLB{hostname}=`hostname`;
 $GLB{uname}=`uname`;
 chomp $GLB{uname};
 chomp $GLB{hostname};
+#
+#Terminal stuff
+#- Prompt
+#- Colors
+package TERM;
+my %color=(
+        test => "\e[49;44m",
+        bluebackgr => "\e[49;44m",
+        yellowbackgr => "\e[49;43m",
+        green => "\e[49;32m",
+        greenbackgr => "\e[49;42m",
+        redbackgr => "\e[49;41m",
+        white => "\e[49;37m",
+        lblue => "\e[49;36m",
+        purple => "\e[49;35m",
+        blue => "\e[49;34m",
+        yellow => "\e[49;33m",
+        red => "\e[49;31m"
+        );
+sub color_normal()
+{
+        return '^[[0m';
+}
+sub prompt()
+{
+    #export PS1="$(printf "${TITLE}$HOSTNAME:\$PWD>")"
+    my $hostname=`hostname`;
+    chomp $hostname;
+    $ENV{PS1}  ="\\[\033]2;\${USER}@\${HOSTNAME} SBX \${SBX}\007\\]";#TITLE
+    $ENV{PS1} .='\\['.$color{yellow}.'\\]'.$hostname.':${PWD} SB'.'\['.$color{white}.'\]'.'>';#path
+}
 
 #
 #Registry stuff
@@ -114,6 +145,27 @@ sub import()
     
   close CONFIG;
 }
+
+#
+# inject deps into given group
+#
+sub inject($)
+{
+  my $grp=shift;
+  #print "grp is $grp ";
+  #print "NODEPS $CFG{$grp}{'cfg.deps'}\n" if not $CFG{$grp}{'cfg.deps'};
+  return 0 if not $CFG{$grp}{'cfg.deps'};
+  my @deps=split /,/, $CFG{$grp}{'cfg.deps'};
+  #print "DBG:deps are @deps\n";
+  foreach my $ext_grp( @deps ){
+    #print "deps = $_\n";
+      foreach( keys $CFG{$ext_grp} ){
+        #print "keys = $_\n";
+        $CFG{$grp}{$_}=$CFG{$ext_grp}{$_};
+      }
+  }
+}
+
 sub get_group($)
 {
   my $group=shift;
@@ -141,7 +193,9 @@ sub menu()
 	my $nr=1;
 	#print "user_menu".Dumper(\%menu)."\n";
 	foreach(@options){
-		print $nr++.") $_\n";
+		print $nr++.") $_ ";
+		print ":$CFG{$_}{'cfg.info'}";
+		print "\n";
 	}
 
 	my $choice;
@@ -165,11 +219,11 @@ sub export_grp($)
 {
   my $group=shift;
   my $env=CONFIG::get_group($group);
-	print "DBG:env".Dumper($env)."\n";
+  #print "DBG:env".Dumper($env)."\n";
   #TODO mbv export
   foreach( keys $env ) {
     $ENV{$_}=$env->{$_};
-    print "DBG:export $_, $ENV{$_} to $env->{$_}\n";
+    #print "DBG:export $_, $ENV{$_} to $env->{$_}\n";
   }
 }
 
@@ -178,12 +232,12 @@ sub export_grp($)
 #
 sub export($)
 {
-	print "DBG:env".Dumper(\@_)."\n";
+  #print "DBG:env".Dumper(\@_)."\n";
   my $env=shift;
-	print "DBG:env".Dumper($env)."\n";
+  #print "DBG:env".Dumper($env)."\n";
   foreach( keys $env ) {
     $ENV{$_}=$env->{$_};
-    print "DBG:export $_= $ENV{$_}\n";
+    #print "DBG:export $_= $ENV{$_}\n";
   }
 
 }
@@ -201,7 +255,7 @@ sub sub_vars($)
       if( $env->{$var} =~ m/\$\{([^}]*)\}/ ){
           my $varvar=$1;
           $env->{$var} =~ s/\$\{[^}]*\}/$ENV{$varvar}/ if  $ENV{$varvar};
-          print "DBG:found $varvar, $ENV{$varvar} in \${} in $env->{$var}\n";
+          #print "DBG:found $varvar, $ENV{$varvar} in \${} in $env->{$var}\n";
           $found=1;
         }
     }
@@ -217,10 +271,12 @@ sub start($)
   my $group=shift;
   my $env=CONFIG::get_group($group);
   #TODO start shell
-  chdir( $ENV{SBXROOT} );
+  warn "Can not find dir '$ENV{SBXROOT}'\n" if not -d $ENV{SBXROOT};
+  #print "DBG:chdir to '$ENV{SBXROOT}'\n";
+  chdir( "$ENV{SBXROOT}" ) or die "$!";
   for( $env->{'cfg.type'} ){
-    system( 'sh')  if /^sh$/ ;
-    shell_cmd()  if /^dos$/ ;
+    shell_sh()  if /^sh$/ ;
+    shell_dos()  if /^dos$/ ;
     system( '/cygdrive/c/Windows/System32/cmd.exe')  if /^cdos$/ ;
     break;
   }
@@ -228,7 +284,12 @@ sub start($)
   #system('sh');
 }
 
-sub shell_cmd()
+sub shell_sh()
+{
+    TERM::prompt();
+    system( 'sh');
+}
+sub shell_dos()
 {
     my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
     my $PATH=$env{Path};
@@ -237,6 +298,20 @@ sub shell_cmd()
     $env{Path}=$PATH.';'.$env{Path};
     ENV::export(\%env);
     system( '/cygdrive/c/Windows/System32/cmd.exe');
+}
+#
+# SBX utilities
+#
+package SBX;
+sub info()
+{
+	print "Sandbox info:\n";
+	print "Doesn't look like a sandbox, environment not set SBX='$ENV{SBX}'\n" if not $ENV{SBX};
+	if( -e "$ENV{ENV}" ){
+		print "Environemnt INFO uit '$ENV{ENV}'\n";
+		my @info=grep(!/#INFO_/,`sed -n '/INFO_START/,/INFO_STOP/p' '$ENV{ENV}'`);
+		print @info;
+	}
 }
 #
 # MAIN
@@ -251,10 +326,16 @@ if($test){
   print "DBG:stop\n";
   exit 100;
 }
+
+if( $ARGV[0] eq 'info' ){
+	SBX::info();
+	exit 0;
+}
 print "Start\n";
 CONFIG::import();
 my $choice=MENU::menu();
 print "choice=$choice\n";
+CONFIG::inject($choice);
 ENV::export_grp($choice);
 ENV::sub_vars($choice);
 ENV::export_grp($choice);
