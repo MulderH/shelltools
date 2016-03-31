@@ -55,6 +55,34 @@ chomp $GLB{uname};
 chomp $GLB{hostname};
 
 #
+#Registry stuff
+#
+package Win;
+use Data::Dumper;
+#use Win32::Registry;
+my $reg='/cygdrive/c/Windows/System32/reg.exe';
+#REG QUERY "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /s 
+sub Query($)
+{
+  my $key=shift;
+  my $q=$reg.' QUERY "'.$key.'" /s';
+  my %keys;
+  open(my $fh, '-|', $q) or die $!;
+  while (my $l=<$fh>) {
+    chomp $l;
+    next if not $l =~ m/REG_/;
+    #print "DBG:$l\n";
+    my ($reg,$type,$val)=split(' ',$l,3);
+    #print "DBG:reg $reg,$type,$val\n";
+    $val =~ s/\r$//;
+    $keys{$reg}= $val;
+    #print 'DBG::$keys{'.$reg.'}="'.$val."\"\n";
+  }
+  close $fh;
+	print "DBG:env==>".Dumper(\%keys)."\n";
+  return %keys;
+}
+#
 #CONFIG
 #
 package CONFIG;
@@ -101,7 +129,7 @@ sub get_items()
   #TODO filter op menu
   my @items=();
   foreach my $grp ( keys %CFG ){
-    push @items, $grp if $CFG{$grp}{menu} eq 'true';
+    push @items, $grp if $CFG{$grp}{'cfg.menu'} eq 'true';
   }
   return @items;
 }
@@ -133,17 +161,32 @@ sub menu()
 #
 package ENV;
 use Data::Dumper;
-sub create($)
+sub export_grp($)
 {
   my $group=shift;
-  #TODO create environment
   my $env=CONFIG::get_group($group);
 	print "DBG:env".Dumper($env)."\n";
+  #TODO mbv export
   foreach( keys $env ) {
     $ENV{$_}=$env->{$_};
+    print "DBG:export $_, $ENV{$_} to $env->{$_}\n";
   }
 }
 
+#
+# export hash to environemnt
+#
+sub export($)
+{
+	print "DBG:env".Dumper(\@_)."\n";
+  my $env=shift;
+	print "DBG:env".Dumper($env)."\n";
+  foreach( keys $env ) {
+    $ENV{$_}=$env->{$_};
+    print "DBG:export $_= $ENV{$_}\n";
+  }
+
+}
 sub sub_vars($)
 {
   my $group=shift;
@@ -164,23 +207,55 @@ sub sub_vars($)
     }
   }while($found);
 }
-sub start()
+#
+# Start shell
+# Depends on cfg.type
+# sh  : start sh
+# cmd : start dos cmd.exe
+sub start($)
 {
+  my $group=shift;
+  my $env=CONFIG::get_group($group);
   #TODO start shell
-  print "DBG:chdir( $ENV{SBXROOT} )\n";
   chdir( $ENV{SBXROOT} );
-  system('sh');
+  for( $env->{'cfg.type'} ){
+    system( 'sh')  if /^sh$/ ;
+    shell_cmd()  if /^dos$/ ;
+    system( '/cygdrive/c/Windows/System32/cmd.exe')  if /^cdos$/ ;
+    break;
+  }
+  #print "DBG:chdir( $ENV{SBXROOT} )\n";
+  #system('sh');
+}
+
+sub shell_cmd()
+{
+    my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
+    my $PATH=$env{Path};
+    ENV::export(\%env);
+    %env=Win::Query( 'HKCU\Environment');
+    $env{Path}=$PATH.';'.$env{Path};
+    ENV::export(\%env);
+    system( '/cygdrive/c/Windows/System32/cmd.exe');
 }
 #
 # MAIN
 # 
 package MAIN;
+use Data::Dumper;
 
+my $test=0;
+if($test){
+  my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
+	print "DBG:env==>".Dumper(\%env)."\n";
+  print "DBG:stop\n";
+  exit 100;
+}
 print "Start\n";
 CONFIG::import();
 my $choice=MENU::menu();
 print "choice=$choice\n";
-ENV::create($choice);
+ENV::export_grp($choice);
 ENV::sub_vars($choice);
-ENV::create($choice);
-ENV::start();
+ENV::export_grp($choice);
+ENV::start($choice);
