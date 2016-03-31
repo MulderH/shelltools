@@ -286,8 +286,12 @@ sub start($)
 
 sub shell_sh()
 {
-    TERM::prompt();
-    system( 'sh');
+  #set ENV if noet set and files exists
+  if( not $ENV{ENV} and -f "$ENV{SBXROOT}/.sbx_env" ){
+	  $ENV{ENV}=$ENV{SBXROOT}.'/.sbx_env';
+  }
+  TERM::prompt();
+  system('sh');
 }
 sub shell_dos()
 {
@@ -297,7 +301,7 @@ sub shell_dos()
     %env=Win::Query( 'HKCU\Environment');
     $env{Path}=$PATH.';'.$env{Path};
     ENV::export(\%env);
-    system( '/cygdrive/c/Windows/System32/cmd.exe');
+    system('/cygdrive/c/Windows/System32/cmd.exe');
 }
 #
 # SBX utilities
