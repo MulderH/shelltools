@@ -144,9 +144,31 @@ sub create($)
   }
 }
 
+sub sub_vars($)
+{
+  my $group=shift;
+  my $env=CONFIG::get_group($group);
+
+  my $found=0;
+  do{
+    $found=0;
+    foreach my $var ( keys $env ) {
+      #$ENV{$_}=$env->{$_};
+      #print "DBG:test $var\n";
+      if( $env->{$var} =~ m/\$\{([^}]*)\}/ ){
+          my $varvar=$1;
+          $env->{$var} =~ s/\$\{[^}]*\}/$ENV{$varvar}/ if  $ENV{$varvar};
+          print "DBG:found $varvar, $ENV{$varvar} in \${} in $env->{$var}\n";
+          $found=1;
+        }
+    }
+  }while($found);
+}
 sub start()
 {
   #TODO start shell
+  print "DBG:chdir( $ENV{SBXROOT} )\n";
+  chdir( $ENV{SBXROOT} );
   system('sh');
 }
 #
@@ -158,5 +180,7 @@ print "Start\n";
 CONFIG::import();
 my $choice=MENU::menu();
 print "choice=$choice\n";
+ENV::create($choice);
+ENV::sub_vars($choice);
 ENV::create($choice);
 ENV::start();
