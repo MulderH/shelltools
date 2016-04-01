@@ -198,7 +198,7 @@ sub get_items()
 {
   #TODO filter op menu
   my @items=();
-  foreach my $grp ( keys %CFG ){
+  foreach my $grp ( sort keys %CFG ){
     push @items, $grp if $CFG{$grp}{'cfg.menu'} eq 'true';
   }
   return @items;
@@ -289,7 +289,7 @@ sub start($)
   my $group=shift;
   my $env=CONFIG::get_group($group);
   #TODO start shell
-  warn "Can not find dir '$ENV{SBXROOT}'\n" if not -d $ENV{SBXROOT};
+  die "Can not find dir '$ENV{SBXROOT}', verify your SBXROOT?\n" if not -d $ENV{SBXROOT};
   #print "DBG:chdir to '$ENV{SBXROOT}'\n";
   chdir( "$ENV{SBXROOT}" ) or die "$!";
   for( $env->{'cfg.type'} ){
@@ -346,6 +346,25 @@ sub info()
 		my @info=grep(!/#INFO_/,`sed -n '/INFO_START/,/INFO_STOP/p' '$ENV{ENV}'`);
 		print @info;
 	}
+}
+
+#TODO use by info
+sub print_env(@)
+{
+        foreach( @_ ){
+                printf ("%18s = %s\n",$_,$ENV{$_}) if $ENV{$_};
+        }
+}
+#TODO use by cfg.deps.tools
+sub print_where($)
+{
+        my $file=shift;
+        my $where=`which 2>/dev/null '$file'`;
+        chomp $where;
+        if ( not -f $where ){
+                $where=' - not found or readable';
+        }
+        printf("%18s =  %s\n",$file,$where);
 }
 #
 # MAIN
