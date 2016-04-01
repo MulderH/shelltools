@@ -163,19 +163,25 @@ sub import()
 #
 sub inject($)
 {
-  my $grp=shift;
-  #print "grp is $grp ";
+  my $item=shift;
+  my $grp=$CFG{$item};
+  #print "user_config".Dumper($grp)."\n";
+  #print "grp is $group ";
   #print "NODEPS $CFG{$grp}{'cfg.deps'}\n" if not $CFG{$grp}{'cfg.deps'};
-  return 0 if not $CFG{$grp}{'cfg.deps'};
-  my @deps=split /,/, $CFG{$grp}{'cfg.deps'};
-  #print "DBG:deps are @deps\n";
-  foreach my $ext_grp( @deps ){
-    #print "deps = $_\n";
-      foreach( keys $CFG{$ext_grp} ){
-        #print "keys = $_\n";
-        $CFG{$grp}{$_}=$CFG{$ext_grp}{$_};
+  return 0 if not $grp->{'cfg.deps'};
+  #print "DBG:cfg.deps $grp->{'cfg.deps'}\n";
+  my @deps=split /,/, $grp->{'cfg.deps'};
+  foreach my $item( @deps ){
+      #print "deps = $item\n";
+      #print "importing ".Dumper(\%CFG)."\n";
+      my $ext_grp=$CFG{$item};
+      #print "importing ".Dumper($ext_grp)."\n";
+      foreach( keys %$ext_grp ){
+	#print "keys = $_\n";
+        $grp->{$_}=$ext_grp->{$_};
       }
   }
+  #print "importing ".Dumper(\%CFG)."\n";
 }
 
 sub get_group($)
@@ -233,7 +239,7 @@ sub export_grp($)
   my $env=CONFIG::get_group($group);
   #print "DBG:env".Dumper($env)."\n";
   #TODO mbv export
-  foreach( keys $env ) {
+  foreach( keys %$env ) {
     $ENV{$_}=$env->{$_};
     #print "DBG:export $_, $ENV{$_} to $env->{$_}\n";
   }
@@ -247,7 +253,7 @@ sub export($)
   #print "DBG:env".Dumper(\@_)."\n";
   my $env=shift;
   #print "DBG:env".Dumper($env)."\n";
-  foreach( keys $env ) {
+  foreach( keys %$env ) {
     $ENV{$_}=$env->{$_};
     #print "DBG:export $_= $ENV{$_}\n";
   }
@@ -261,7 +267,7 @@ sub sub_vars($)
   my $found=0;
   do{
     $found=0;
-    foreach my $var ( keys $env ) {
+    foreach my $var ( keys %$env ) {
       #$ENV{$_}=$env->{$_};
       #print "DBG:test $var\n";
       if( $env->{$var} =~ m/\$\{([^}]*)\}/ ){
@@ -289,6 +295,7 @@ sub start($)
   for( $env->{'cfg.type'} ){
     shell_sh()  if /^sh$/ ;
     shell_dos()  if /^dos$/ ;
+    shell_bash()  if /^bash$/ ;
     system( '/cygdrive/c/Windows/System32/cmd.exe')  if /^cdos$/ ;
     break;
   }
@@ -296,10 +303,24 @@ sub start($)
   #system('sh');
 }
 
+sub shell_bash()
+{
+  if( not $ENV{ENV} and -f "$ENV{SBXROOT}/.sbx_env" ){
+	  $ENV{ENV}=$ENV{SBXROOT}.'/.sbx_env';
+  }
+  $ENV{BASH_ENV}=$ENV{ENV};
+  $ENV{debian_chroot}=$ENV{SBX};
+  system('bash','--rcfile',$ENV{ENV});
+}
+
 sub shell_sh()
 {
-    TERM::prompt();
-    system( 'sh');
+  #set ENV if noet set and files exists
+  if( not $ENV{ENV} and -f "$ENV{SBXROOT}/.sbx_env" ){
+	  $ENV{ENV}=$ENV{SBXROOT}.'/.sbx_env';
+  }
+  TERM::prompt();
+  system('sh');
 }
 sub shell_dos()
 {
@@ -309,7 +330,7 @@ sub shell_dos()
     %env=Win::Query( 'HKCU\Environment');
     $env{Path}=$PATH.';'.$env{Path};
     ENV::export(\%env);
-    system( '/cygdrive/c/Windows/System32/cmd.exe');
+    system('/cygdrive/c/Windows/System32/cmd.exe');
 }
 #
 # SBX utilities
