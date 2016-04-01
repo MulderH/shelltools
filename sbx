@@ -85,6 +85,18 @@ sub prompt()
     $ENV{PS1} .='\\['.$color{yellow}.'\\]'.$hostname.':${PWD} SB'.'\['.$color{white}.'\]'.'>';#path
 }
 
+sub title(@)
+{
+    #print "Set Title\n";
+    #print("\e]2;test3\7");
+	#print "\033]2;test1\007";
+	#print "\033]2;test2\007";
+	#print "\c]2;test4\a";
+
+    #system('echo','\033]0;${USER}@${HOST}\007');
+    #system('export','SBX=test');
+    $ENV{SBX}="@_";
+}
 #
 #Registry stuff
 #
@@ -307,6 +319,7 @@ sub info()
 {
 	print "Sandbox info:\n";
 	print "Doesn't look like a sandbox, environment not set SBX='$ENV{SBX}'\n" if not $ENV{SBX};
+
 	if( -e "$ENV{ENV}" ){
 		print "Environemnt INFO uit '$ENV{ENV}'\n";
 		my @info=grep(!/#INFO_/,`sed -n '/INFO_START/,/INFO_STOP/p' '$ENV{ENV}'`);
@@ -331,9 +344,15 @@ if( $ARGV[0] eq 'info' ){
 	SBX::info();
 	exit 0;
 }
+
+if( $ENV{SBX} ) {
+  print "Inside sandbox! Name is SBX='$ENV{SBX}'\n";
+  exit 1;
+}
 print "Start\n";
 CONFIG::import();
 my $choice=MENU::menu();
+$ENV{SBX}=$choice;
 print "choice=$choice\n";
 CONFIG::inject($choice);
 ENV::export_grp($choice);
