@@ -125,6 +125,25 @@ sub Query($)
 	print "DBG:env==>".Dumper(\%keys)."\n";
   return %keys;
 }
+
+#
+#Windows env is case insensitive
+#
+sub set_env($$)
+{
+    my ($env,$val)=@_;
+    my $var_set=0;
+    foreach( keys %ENV ){
+      if(/^$env$/i){
+          print "DBG:set $_($env) to '$val'\n";
+          $ENV{$_}=$val;
+          $var_set=1;
+          last;
+      }
+    }
+    $ENV{$env}=$val if not $var_set;
+    print "DBG:set $env='$val' and found '$ENV{$env}\n";
+}
 #
 #CONFIG
 #
@@ -184,6 +203,10 @@ sub inject($)
   #print "importing ".Dumper(\%CFG)."\n";
 }
 
+sub get_cfg()
+{
+  return \%CFG;
+}
 sub get_group($)
 {
   my $group=shift;
@@ -203,11 +226,9 @@ sub get_items()
   }
   return @items;
 }
-sub menu()
+sub ls()
 {
   my @options=get_items();
-
- 	#!TODO enter toets geeft keuze en gaat dus door.
 	my $nr=1;
 	#print "user_menu".Dumper(\%menu)."\n";
 	foreach(@options){
@@ -215,14 +236,20 @@ sub menu()
 		print ":$CFG{$_}{'cfg.info'}";
 		print "\n";
 	}
+}
+sub menu()
+{
+  my @options=get_items();
+
+  ls();#TODO options meegeven
 
 	my $choice;
 	while(1){
-        	print "Select one [1..".($nr-1).']?';
+        	print "Select one [1..".(scalar @options).']?';
         	$choice=<STDIN>;
 		chomp $choice;
 		$choice=1 if $choice eq '';#default
-		last if $choice > 0 and $choice < $nr ;
+		last if $choice > 0 and $choice <= @options ;
 	};
 
 	return $options[$choice-1];
@@ -233,6 +260,31 @@ sub menu()
 #
 package ENV;
 use Data::Dumper;
+
+#
+# substitute %var%  into var
+#
+sub sub_win_env()
+{
+  my $found=0;
+  do{
+    $found=0;
+    foreach my $var ( keys %ENV ) {
+      #print "DBG:test $var\n";
+      if( $ENV{$var} =~ m/\%([^%]*)\%/ ){
+          my $varvar=$1;
+          if( $ENV{$varvar} ){
+            $ENV{$var} =~ s/\%$varvar\%/$ENV{$varvar}/ig;
+            #print "DBG:found $varvar=$ENV{$varvar} in new $var=$ENV{$var}\n";
+            $found=1;
+          }else{
+            print "WARNING: no environment var set for $varvar  in $var='$ENV{$var}'\n";
+          }
+        }
+    }
+  }while($found);
+}
+
 sub export_grp($)
 {
   my $group=shift;
@@ -253,12 +305,24 @@ sub export($)
   #print "DBG:env".Dumper(\@_)."\n";
   my $env=shift;
   #print "DBG:env".Dumper($env)."\n";
+  #chdir("/tmp/abc");
   foreach( keys %$env ) {
-    $ENV{$_}=$env->{$_};
-    #print "DBG:export $_= $ENV{$_}\n";
+    if( m/^TE{0,1}MP$/
+        || m/^HOME$/
+      ){
+      #TMP en TEMP are prepended by pwd
+      print "FOUND TEMP=$_=$ENV{$_},skip\n";
+      next;
+    }
+    #$ENV{$_}=$env->{$_};
+    Win::set_env($_,$env->{$_});
+    print "DBG:export $_  = $ENV{$_} = $env->{$_}\n";
   }
 
 }
+#
+#import : environment group
+#
 sub sub_vars($)
 {
   my $group=shift;
@@ -296,11 +360,66 @@ sub start($)
     shell_sh()  if /^sh$/ ;
     shell_dos()  if /^dos$/ ;
     shell_bash()  if /^bash$/ ;
+    shell_rlwrap()  if /^rlwrap$/ ;
     system( '/cygdrive/c/Windows/System32/cmd.exe')  if /^cdos$/ ;
     break;
   }
   #print "DBG:chdir( $ENV{SBXROOT} )\n";
   #system('sh');
+}
+
+sub get_winpath($)
+{
+    my $path=shift;
+    print "from $path ";
+    $path=`/cygdrive/c/ws/cygwin/bin/cygpath -w '$path'`;
+    chomp $path;
+    print "to '$path' \n";
+    return $path;
+}
+sub set_windows_env()
+{
+    die "ERR:env USER not set" if not $ENV{USER};
+    $ENV{APPDATA}=get_winpath("/Users/$ENV{USER}/AppData/Roaming") if not $ENV{APPDATA};
+#< CommonProgramFiles=C:\Program Files\Common Files
+    $ENV{'CommonProgramFiles'}=get_winpath("/cygdrive/c/Program Files/Common Files") if not $ENV{'CommonProgramFiles'};
+    $ENV{USERPROFILE}=get_winpath("/Users/$ENV{USER}") if not $ENV{USERPROFILE};
+    $ENV{LOCALAPPDATA}=get_winpath("/Users/$ENV{USER}/AppData/Local") if not $ENV{LOCALAPPDATA};
+    $ENV{USERNAME}=${USER} if not $ENV{USERNAME} = $ENV{USER};
+
+    #TODO tijdelijk env fixes
+    delete $ENV{COMSPEC};
+    delete $ENV{INFOPATH};
+    delete $ENV{LANG};
+    delete $ENV{MAIL};
+    delete $ENV{MANPATH};
+    delete $ENV{LOGNAME};
+    delete $ENV{TZ};
+    delete $ENV{PROGRAMFILES}; Win::set_env('ProgramFiles','C:\\Program Files');
+    delete $ENV{SYSTEMDRIVE}; Win::set_env('SystemDrive','C:');
+    delete $ENV{SYSTEMROOT}; Win::set_env('SystemRoot','C:\\Windows');
+
+
+    $ENV{WinDir}=$ENV{WINDIR};delete $ENV{WINDIR};
+
+    Win::set_env('ComSpec','C:\\Windows\\system32\\cmd.exe');
+    #$ENV{'ComSpec'}='C:\\Windows\\system32\\cmd.exe';
+    Win::set_env('HOMEDRIVE','N:');
+    Win::set_env('HOMEPATH','\\');
+    Win::set_env('HOMESHARE','\\\\ob300vfsw12f\\ob300vfsw12f.USR\\muldh23');
+    Win::set_env('LOGONSERVER','\\\\OB309VDCW12F');
+    Win::set_env('ProgramData','C:\\ProgramData');
+    Win::set_env('PSModulePath','C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\');
+    Win::set_env('PUBLIC','C:\\Users\\Public');
+    Win::set_env('SESSIONNAME','Console');
+    Win::set_env('USERDNSDOMAIN','ONT.BELASTINGDIENST.NL');
+    Win::set_env('USERDOMAIN_ROAMINGPROFILE','ONT');
+    Win::set_env('USERDOMAIN=','ONT');
+
+
+
+    #undef $ENV{BASH} if defined $ENV{BASH};
+    delete $ENV{BASH};
 }
 
 sub shell_bash()
@@ -325,20 +444,57 @@ sub shell_sh()
   TERM::prompt();
   system('sh');
 }
+sub shell_rlwrap()
+{
+  print "DBG:enter shell_rlwrap()\n";
+    my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
+    my $PATH=$env{Path};
+    ENV::export(\%env);
+    %env=Win::Query( 'HKCU\Environment');
+    $env{Path}=$PATH.';'.$env{Path};
+    $env{Path}=~ s/%SystemRoot%/C:\\windows/g;
+    ENV::export(\%env);
+    set_windows_env();
+    ENV::sub_win_env();
+    #$SBXROOT="'$SBXROOT'";
+    #$SBXROOT=~ s#\\#/#g;
+    my $TASTE=`/cygdrive/c/ws/cygwin/bin/cygpath -t unix '$ENV{WTLSBTU_Location}/nt/bin/cmdbox.cmd'`;
+    chomp $TASTE;
+    my $SBXROOT=`/cygdrive/c/ws/cygwin/bin/cygpath -w '$ENV{SBXROOT}'`;
+    chomp $SBXROOT;
+
+
+    #system('prompt $P$S%SBX%$G');
+    #system('rlwrap -pblue -i -S "$(pwd) $SBX: " /cygdrive/c/Windows/System32/cmd.exe');
+    my @cmd=('/cygdrive/c/ws/cygwin/bin/rlwrap','-pblue', '-i', '-c',$TASTE, $SBXROOT);
+    print "DBG:system(@cmd);\n";
+    #system('rlwrap -pblue -i -c '."'$TASTE' $ENV{SBXROOT}") and die "ERR last system call $!";
+    system(@cmd) and die "ERR last system call '@cmd' $!";
+    print "DBG:return to cygwin\n";
+}
 sub shell_dos()
 {
+  print "DBG:enter shell_dos()\n";
     my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
     my $PATH=$env{Path};
     ENV::export(\%env);
     %env=Win::Query( 'HKCU\Environment');
     $env{Path}=$PATH.';'.$env{Path};
     ENV::export(\%env);
+    set_windows_env();
+    ENV::sub_win_env();
     system('/cygdrive/c/Windows/System32/cmd.exe');
 }
 #
 # SBX utilities
 #
 package SBX;
+use Data::Dumper;
+sub ls()
+{
+	print "Sandbox list:\n";
+  MENU::ls();
+}
 sub info()
 {
 	print "Sandbox '$ENV{SBX}' info:\n";
@@ -380,6 +536,17 @@ sub print_where($)
         }
         printf("%18s =  %s\n",$file,$where);
 }
+sub start($)
+{
+  my $SBX=shift;
+  $ENV{SBX}=$SBX;
+  print "choice=$SBX\n";
+  CONFIG::inject($SBX);
+  ENV::export_grp($SBX);
+  ENV::sub_vars($SBX);
+  ENV::export_grp($SBX);
+  ENV::start($SBX);
+}
 #
 # MAIN
 # 
@@ -394,22 +561,32 @@ if($test){
   exit 100;
 }
 
-if( $ARGV[0] eq 'info' ){
-	SBX::info();
-	exit 0;
-}
+#if( $ARGV[0] eq 'info' ){
+#	SBX::info();
+#	exit 0;
+#}
+
+#
+# MAIN
+# 
+#
 
 if( $ENV{SBX} ) {
   print "Inside sandbox! Name is SBX='$ENV{SBX}'\n";
   exit 1;
 }
-print "Start\n";
+
 CONFIG::import();
+for( $ARGV[0] ){
+  chomp;
+  print "argv is '$_'\n";
+  last if not length $_;
+	/^info$/ and do { SBX::info(); exit 0;};
+	/^ls$/   and do { SBX::ls()  ; exit 0;}; 
+  SBX::start($_);
+  exit 0;
+}
+
+
 my $choice=MENU::menu();
-$ENV{SBX}=$choice;
-print "choice=$choice\n";
-CONFIG::inject($choice);
-ENV::export_grp($choice);
-ENV::sub_vars($choice);
-ENV::export_grp($choice);
-ENV::start($choice);
+SBX::start($choice);
