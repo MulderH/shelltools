@@ -184,6 +184,7 @@ sub inject($)
 {
   my $item=shift;
   my $grp=$CFG{$item};
+  SBX::set_type();
   #print "user_config".Dumper($grp)."\n";
   #print "grp is $group ";
   #print "NODEPS $CFG{$grp}{'cfg.deps'}\n" if not $CFG{$grp}{'cfg.deps'};
@@ -260,7 +261,38 @@ sub menu()
 #
 package ENV;
 use Data::Dumper;
+my %LOC_ENV=();
 
+#
+#import : environment substitute in LOC_ENV, with values from {LOC_ENV,ENV}
+#
+sub sub_vars($)
+{
+
+  my $found=0;
+  do{
+    $found=0;
+    foreach my $var ( keys %LOC_ENV ) {
+      #$ENV{$_}=$env->{$_};
+      #print "DBG:test $var\n";
+      if( $LOC_ENV{$var} =~ m/\$\{([^}]*)\}/ ){
+          my $varvar=$1;
+          if(  $LOC_ENV{$varvar} or  $ENV{$varvar} )
+          {
+            print "DBG:translated $varvar from $var = $LOC_ENV{$var} \n";
+            $LOC_ENV{$var} =~ s/\$\{$varvar\}/$LOC_ENV{$varvar}/ if  $LOC_ENV{$varvar};
+            $LOC_ENV{$var} =~ s/\$\{$varvar\}/$ENV{$varvar}/ if  $ENV{$varvar};
+            $found=1;
+            print "DBG:translated $varvar  to $var = $LOC_ENV{$var} \n";
+          }else{
+            print "WARNING: no environment var set for $varvar  in $var='$LOC_ENV{$var}'\n";
+          }
+          #TODO failsave loop detection
+        }
+    }
+  }while($found);
+  #print "DBG:en sub_vars()\n";
+}
 #
 # substitute %var%  into var
 #
@@ -269,38 +301,81 @@ sub sub_win_env()
   my $found=0;
   do{
     $found=0;
-    foreach my $var ( keys %ENV ) {
+    foreach my $var ( keys %LOC_ENV ) {
       #print "DBG:test $var\n";
-      if( $ENV{$var} =~ m/\%([^%]*)\%/ ){
-          my $varvar=$1;
-          if( $ENV{$varvar} ){
-            $ENV{$var} =~ s/\%$varvar\%/$ENV{$varvar}/ig;
+      if( $LOC_ENV{$var} =~ m/\%([^%]*)\%/ ){
+          my $varvar=uc $1;
+          if( $LOC_ENV{$varvar} ){
+            $LOC_ENV{$var} =~ s/\%$varvar\%/$LOC_ENV{$varvar}/ig;
             #print "DBG:found $varvar=$ENV{$varvar} in new $var=$ENV{$var}\n";
             $found=1;
           }else{
-            print "WARNING: no environment var set for $varvar  in $var='$ENV{$var}'\n";
+            print "WARNING: no environment var set for $varvar  in $var='$LOC_ENV{$var}'\n";
           }
         }
     }
   }while($found);
 }
 
+#
+# Export LOC_ENV to env
+#
+sub export()
+{
+   foreach my $var( keys %ENV ){
+      my $uc_var = uc $var;
+      if( $LOC_ENV{$uc_var} ){
+        $ENV{$var}=$LOC_ENV{$uc_var};
+        delete $LOC_ENV{$uc_var};
+      }
+   }
+   foreach my $var( keys %LOC_ENV ){
+     $ENV{$var}=$LOC_ENV{$var};
+   }
+}
+#
+# Exports environment (var starting with env.) to local environment
+# 
 sub export_grp($)
 {
-  my $group=shift;
-  my $env=CONFIG::get_group($group);
-  #print "DBG:env".Dumper($env)."\n";
+  my $sbx=shift;
+  my $sbx_cfg=CONFIG::get_group($sbx);
+
+  #
+  #Import process environment
+  #
+  foreach ( keys %ENV )
+  {
+    set($_,$ENV{$_});
+  }
+  #print "DBG:sbx_cfg".Dumper($sbx_cfg)."\n";
   #TODO mbv export
-  foreach( keys %$env ) {
-    $ENV{$_}=$env->{$_};
-    #print "DBG:export $_, $ENV{$_} to $env->{$_}\n";
+  foreach my $var( keys %$sbx_cfg ) {
+    next if not $var =~ /^env./;
+    my $env_var=$var; $env_var =~ s/^env\.//;
+    #print "DBG:export $env_var, from $ENV{$env_var} to $sbx_cfg->{$var}\n";
+    $ENV{$env_var}=$sbx_cfg->{$var};
+    set($env_var,$sbx_cfg->{$var});
   }
 }
+sub set($$)
+{
+    my($var,$val)=@_;
+    $var = uc $var if SBX::get_type() eq 'dos';
+    $LOC_ENV{$var}=$val;
+    print"DBG:set()".SBX::get_type()."  LOC_ENV{$var}='$val'\n";
+}
 
+sub get($)
+{
+    my($var)=@_;
+    $var = uc $var if SBX::get_type() eq 'dos';
+    return $LOC_ENV{$var};
+}
 #
-# export hash to environment
+# import hash into LOC_ENV
 #
-sub export($)
+sub import($)
 {
   #print "DBG:env".Dumper(\@_)."\n";
   my $env=shift;
@@ -315,33 +390,14 @@ sub export($)
       next;
     }
     #$ENV{$_}=$env->{$_};
-    Win::set_env($_,$env->{$_});
-    print "DBG:export $_  = $ENV{$_} = $env->{$_}\n";
+    #Win::set_env($_,$env->{$_});
+    #TODO bypass preserve cases
+    delete $ENV{uc $_} if $ENV{uc $_};#voorkom name clashes
+    $ENV{$_}=$env->{$_};
+    set($_,$env->{$_});
+    print "DBG:ENV:import glob $_  = loc $ENV{$_} =  val $env->{$_}\n";
   }
 
-}
-#
-#import : environment group
-#
-sub sub_vars($)
-{
-  my $group=shift;
-  my $env=CONFIG::get_group($group);
-
-  my $found=0;
-  do{
-    $found=0;
-    foreach my $var ( keys %$env ) {
-      #$ENV{$_}=$env->{$_};
-      #print "DBG:test $var\n";
-      if( $env->{$var} =~ m/\$\{([^}]*)\}/ ){
-          my $varvar=$1;
-          $env->{$var} =~ s/\$\{[^}]*\}/$ENV{$varvar}/ if  $ENV{$varvar};
-          #print "DBG:found $varvar, $ENV{$varvar} in \${} in $env->{$var}\n";
-          $found=1;
-        }
-    }
-  }while($found);
 }
 #
 # Start shell
@@ -380,46 +436,55 @@ sub get_winpath($)
 sub set_windows_env()
 {
     die "ERR:env USER not set" if not $ENV{USER};
-    $ENV{APPDATA}=get_winpath("/Users/$ENV{USER}/AppData/Roaming") if not $ENV{APPDATA};
-#< CommonProgramFiles=C:\Program Files\Common Files
-    $ENV{'CommonProgramFiles'}=get_winpath("/cygdrive/c/Program Files/Common Files") if not $ENV{'CommonProgramFiles'};
-    $ENV{USERPROFILE}=get_winpath("/Users/$ENV{USER}") if not $ENV{USERPROFILE};
-    $ENV{LOCALAPPDATA}=get_winpath("/Users/$ENV{USER}/AppData/Local") if not $ENV{LOCALAPPDATA};
-    $ENV{USERNAME}=${USER} if not $ENV{USERNAME} = $ENV{USER};
+    #set('APPDATA',get_winpath("/Users/$ENV{USER}/AppData/Roaming")) if not $ENV{APPDATA};
+    #TODO bypass preserve cases
+    set('CommonProgramFiles',get_winpath("/cygdrive/c/Program Files/Common Files")) if not $ENV{'CommonProgramFiles'};
+    $ENV{'CommonProgramFiles'}= 'bypass';
+    set('USERPROFILE',get_winpath("/Users/$ENV{USER}"))  if not $ENV{USERPROFILE};
+    #set('LOCALAPPDATA',get_winpath("/Users/$ENV{USER}/AppData/Local")) if not $ENV{LOCALAPPDATA};
+    set('USERNAME',${USER}) if not $ENV{USERNAME} = $ENV{USER};
 
     #TODO tijdelijk env fixes
     delete $ENV{COMSPEC};
-    delete $ENV{INFOPATH};
-    delete $ENV{LANG};
-    delete $ENV{MAIL};
-    delete $ENV{MANPATH};
+    delete $ENV{INFOPATH}; delete $LOC_ENV{INFOPATH};
+    delete $ENV{LANG}; delete $LOC_ENV{LANG};
+    delete $ENV{MAIL};delete $LOC_ENV{MAIL};
+    delete $ENV{MANPATH}; delete $LOC_ENV{MANPATH};
+    delete $ENV{PROGRAMFILES}; delete $LOC_ENV{PROGRAMFILES};
+    delete $ENV{SYSTEMDRIVE}; delete $LOC_ENV{SYSTEMDRIVE};
     delete $ENV{LOGNAME};
     delete $ENV{TZ};
-    delete $ENV{PROGRAMFILES}; Win::set_env('ProgramFiles','C:\\Program Files');
-    delete $ENV{SYSTEMDRIVE}; Win::set_env('SystemDrive','C:');
-    delete $ENV{SYSTEMROOT}; Win::set_env('SystemRoot','C:\\Windows');
+    set('ProgramFiles','C:\\Program Files');
+    $ENV{'ProgramFiles'}= 'bypass';
+    set('SystemDrive','C:');
+    $ENV{'SystemDrive'}= 'bypass';
+
+    #Zou hier moeten staan: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\
+    delete $ENV{SYSTEMROOT}; delete $LOC_ENV{SYSTEMROOT};
+    set('SystemRoot','C:\\Windows');
+    $ENV{'SystemRoot'}= 'bypass';
 
 
-    $ENV{WinDir}=$ENV{WINDIR};delete $ENV{WINDIR};
+    #$ENV{WinDir}=$ENV{WINDIR};delete $ENV{WINDIR};
 
-    Win::set_env('ComSpec','C:\\Windows\\system32\\cmd.exe');
+    #TODO
+    #Source not known
+    set('ComSpec','C:\\Windows\\system32\\cmd.exe');
     #$ENV{'ComSpec'}='C:\\Windows\\system32\\cmd.exe';
-    Win::set_env('HOMEDRIVE','N:');
-    Win::set_env('HOMEPATH','\\');
-    Win::set_env('HOMESHARE','\\\\ob300vfsw12f\\ob300vfsw12f.USR\\muldh23');
-    Win::set_env('LOGONSERVER','\\\\OB309VDCW12F');
-    Win::set_env('ProgramData','C:\\ProgramData');
-    Win::set_env('PSModulePath','C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\');
-    Win::set_env('PUBLIC','C:\\Users\\Public');
-    Win::set_env('SESSIONNAME','Console');
-    Win::set_env('USERDNSDOMAIN','ONT.BELASTINGDIENST.NL');
-    Win::set_env('USERDOMAIN_ROAMINGPROFILE','ONT');
-    Win::set_env('USERDOMAIN=','ONT');
+    #set('HOMEDRIVE','N:');
+    #set('HOMEPATH','\\');
+    #Win::set_env('HOMESHARE','\\\\ob300vfsw12f\\ob300vfsw12f.USR\\muldh23');
+    #Win::set_env('LOGONSERVER','\\\\OB309VDCW12F');
+    set('ProgramData','C:\\ProgramData');
+    $ENV{'ProgramData'}= 'bypass';
+    set('PSModulePath','C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\');
+    set('PUBLIC','C:\\Users\\Public');
+    set('SESSIONNAME','Console');
+    #Win::set_env('USERDNSDOMAIN','ONT.BELASTINGDIENST.NL');
+    #Win::set_env('USERDOMAIN_ROAMINGPROFILE','ONT');
+    #Win::set_env('USERDOMAIN=','ONT');
 
-
-
-    #undef $ENV{BASH} if defined $ENV{BASH};
-    delete $ENV{BASH};
+    #delete $ENV{BASH};delete $LOC_ENV{BASH};
 }
 
 sub shell_bash()
@@ -448,12 +513,14 @@ sub shell_rlwrap()
 {
   print "DBG:enter shell_rlwrap()\n";
     my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
-    my $PATH=$env{Path};
-    ENV::export(\%env);
+    ENV::import(\%env);
     %env=Win::Query( 'HKCU\Environment');
-    $env{Path}=$PATH.';'.$env{Path};
-    $env{Path}=~ s/%SystemRoot%/C:\\windows/g;
-    ENV::export(\%env);
+    ENV::import(\%env);
+    #Hacking my PATH
+    #delete $ENV{PATH};delete $ENV{Path};
+    #my $PATH=$env{Path};
+    $LOC_ENV{PATH}=$LOC_ENV{PATH}.';'.$env{Path};
+    #$env{Path}=~ s/%SystemRoot%/C:\\windows/g;
     set_windows_env();
     ENV::sub_win_env();
     #$SBXROOT="'$SBXROOT'";
@@ -472,17 +539,31 @@ sub shell_rlwrap()
     system(@cmd) and die "ERR last system call '@cmd' $!";
     print "DBG:return to cygwin\n";
 }
+
 sub shell_dos()
 {
-  print "DBG:enter shell_dos()\n";
+    print "DBG:enter shell_dos()\n";
+    my $PATH="";
+    $PATH=$LOC_ENV{PATH};
+
     my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
-    my $PATH=$env{Path};
-    ENV::export(\%env);
+    $PATH.=":".$env{Path} if $env{Path};
+    ENV::import(\%env);
+
     %env=Win::Query( 'HKCU\Environment');
-    $env{Path}=$PATH.';'.$env{Path};
-    ENV::export(\%env);
+    $PATH.=":".$env{Path} if $env{Path};
+    ENV::import(\%env);
+
+    %env=Win::Query( 'HKCU\Volatile Environment');
+    $PATH.=":".$env{Path} if $env{Path};
+    ENV::import(\%env);
+
     set_windows_env();
+
+    $LOC_ENV{PATH}=$PATH;
     ENV::sub_win_env();
+    ENV::export();
+
     system('/cygdrive/c/Windows/System32/cmd.exe');
 }
 #
@@ -536,13 +617,26 @@ sub print_where($)
         }
         printf("%18s =  %s\n",$file,$where);
 }
+my $type;
+sub get_type()
+{
+    return $type;
+}
+sub set_type()
+{
+  my $sbx=$CFG{$ENV{SBX}};
+  $type=$sbx->{'cfg.type'};
+  print "DBG: type=$sbx->{'cfg.type'};";
+}
+#
+# Starting procedure SBX
 sub start($)
 {
   my $SBX=shift;
   $ENV{SBX}=$SBX;
   print "choice=$SBX\n";
-  CONFIG::inject($SBX);
-  ENV::export_grp($SBX);
+  CONFIG::inject($SBX);  #inject cfg dependencies
+  ENV::export_grp($SBX); #export cfg env to LOC_ENV
   ENV::sub_vars($SBX);
   ENV::export_grp($SBX);
   ENV::start($SBX);
@@ -552,24 +646,6 @@ sub start($)
 # 
 package MAIN;
 use Data::Dumper;
-
-my $test=0;
-if($test){
-  my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
-	print "DBG:env==>".Dumper(\%env)."\n";
-  print "DBG:stop\n";
-  exit 100;
-}
-
-#if( $ARGV[0] eq 'info' ){
-#	SBX::info();
-#	exit 0;
-#}
-
-#
-# MAIN
-# 
-#
 
 if( $ENV{SBX} ) {
   print "Inside sandbox! Name is SBX='$ENV{SBX}'\n";
