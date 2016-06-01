@@ -152,6 +152,11 @@ use Data::Dumper;
 
 my %CFG=();
 sub  trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
+
+#
+#
+# import .sbxconfig -into-> %CFG
+#
 sub import()
 {
   my $config_file="$ENV{HOME}/.sbxconfig";
@@ -318,7 +323,7 @@ sub sub_win_env()
 }
 
 #
-# Export LOC_ENV to env
+# Export LOC_ENV to ENV
 #
 sub export()
 {
@@ -334,7 +339,7 @@ sub export()
    }
 }
 #
-# Exports environment (var starting with env.) to local environment
+# Exports environment (var starting with env.) to local environment LOC_ENV
 # 
 sub export_grp($)
 {
@@ -637,8 +642,8 @@ sub start($)
   print "choice=$SBX\n";
   CONFIG::inject($SBX);  #inject cfg dependencies
   ENV::export_grp($SBX); #export cfg env to LOC_ENV
-  ENV::sub_vars($SBX);
-  ENV::export_grp($SBX);
+  ENV::sub_vars($SBX);   #substitute vars in LOC_ENV
+  ENV::export();     #export LOC_ENV to ENV
   ENV::start($SBX);
 }
 #
@@ -652,7 +657,7 @@ if( $ENV{SBX} ) {
   exit 1;
 }
 
-CONFIG::import();
+CONFIG::import();#import .sbxconfig --> %CFG
 for( $ARGV[0] ){
   chomp;
   print "argv is '$_'\n";
