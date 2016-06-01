@@ -45,14 +45,37 @@ Hans Mulder - H_Mulder@belastingdienst.nl
 
 #
 # GLOBALS in GLB
-
-my %GLB={
-            hostname => 'localhost'
-        };
+my %GLB=(
+            hostname => 'localhost',
+            DBG => '1'
+          );
 $GLB{hostname}=`hostname`;
 $GLB{uname}=`uname`;
 chomp $GLB{uname};
 chomp $GLB{hostname};
+
+package trace;
+sub info(@)
+{
+    print "info: @_\n" if defined $GLB{'DBG'};
+}
+sub dbg(@)
+{
+    print "debug: @_\n" if defined $GLB{'DBG'};
+}
+sub hdr(@)
+{
+    my $hdr=shift;
+    info('---------------'.$hdr.'---------------');
+}
+
+sub hash_list($)
+{
+  my $grp=shift;
+  foreach my $item( sort keys $grp ){
+    trace::info( sprintf ("  %-20s = %s",$item,$grp->{$item}) );
+  }
+}
 #
 #Terminal stuff
 #- Prompt
@@ -122,7 +145,7 @@ sub Query($)
     #print 'DBG::$keys{'.$reg.'}="'.$val."\"\n";
   }
   close $fh;
-	print "DBG:env==>".Dumper(\%keys)."\n";
+  #print "DBG:env==>".Dumper(\%keys)."\n";
   return %keys;
 }
 
@@ -189,6 +212,11 @@ sub inject($)
 {
   my $item=shift;
   my $grp=$CFG{$item};
+
+  my $grp=$CFG{$item};
+  trace::hdr('Items from sbxconfig');
+  trace::hash_list($grp);
+
   SBX::set_type();
   #print "user_config".Dumper($grp)."\n";
   #print "grp is $group ";
@@ -202,11 +230,16 @@ sub inject($)
       my $ext_grp=$CFG{$item};
       #print "importing ".Dumper($ext_grp)."\n";
       foreach( keys %$ext_grp ){
-	#print "keys = $_\n";
+	      #print "keys = $_\n";
         $grp->{$_}=$ext_grp->{$_};
       }
   }
   #print "importing ".Dumper(\%CFG)."\n";
+  #trace::dbg('GRP items');
+  #foreach my $item( @deps ){
+  #}
+  trace::hdr("Items from sbxconfig");
+  trace::hash_list($grp);
 }
 
 sub get_cfg()
@@ -274,6 +307,7 @@ my %LOC_ENV=();
 sub sub_vars($)
 {
 
+  trace::hdr('substitue vars');
   my $found=0;
   do{
     $found=0;
@@ -284,11 +318,11 @@ sub sub_vars($)
           my $varvar=$1;
           if(  $LOC_ENV{$varvar} or  $ENV{$varvar} )
           {
-            print "DBG:translated $varvar from $var = $LOC_ENV{$var} \n";
+            trace::dbg( "translated $varvar from $var = $LOC_ENV{$var}");
             $LOC_ENV{$var} =~ s/\$\{$varvar\}/$LOC_ENV{$varvar}/ if  $LOC_ENV{$varvar};
             $LOC_ENV{$var} =~ s/\$\{$varvar\}/$ENV{$varvar}/ if  $ENV{$varvar};
             $found=1;
-            print "DBG:translated $varvar  to $var = $LOC_ENV{$var} \n";
+            trace::dbg("translated $varvar  to $var = $LOC_ENV{$var}");
           }else{
             print "WARNING: no environment var set for $varvar  in $var='$LOC_ENV{$var}'\n";
           }
@@ -304,6 +338,7 @@ sub sub_vars($)
 sub sub_win_env()
 {
   my $found=0;
+  trace::hdr('substitue vars');
   do{
     $found=0;
     foreach my $var ( keys %LOC_ENV ) {
@@ -312,7 +347,8 @@ sub sub_win_env()
           my $varvar=uc $1;
           if( $LOC_ENV{$varvar} ){
             $LOC_ENV{$var} =~ s/\%$varvar\%/$LOC_ENV{$varvar}/ig;
-            #print "DBG:found $varvar=$ENV{$varvar} in new $var=$ENV{$var}\n";
+            trace::dbg("found $varvar=$LOC_ENV{$varvar}");
+            trace::dbg("set LOC_ENV $var=$LOC_ENV{$var}");
             $found=1;
           }else{
             print "WARNING: no environment var set for $varvar  in $var='$LOC_ENV{$var}'\n";
@@ -327,14 +363,17 @@ sub sub_win_env()
 #
 sub export()
 {
+   trace::hdr('export LOC_ENV to your process environment');
    foreach my $var( keys %ENV ){
       my $uc_var = uc $var;
       if( $LOC_ENV{$uc_var} ){
+        trace::dbg(sprintf(" %-20s  = %s",$var,$LOC_ENV{$uc_var})); 
         $ENV{$var}=$LOC_ENV{$uc_var};
         delete $LOC_ENV{$uc_var};
       }
    }
    foreach my $var( keys %LOC_ENV ){
+     trace::dbg(sprintf("E %-20s  = %s",$var,$LOC_ENV{$uc_var})); 
      $ENV{$var}=$LOC_ENV{$var};
    }
 }
@@ -353,8 +392,11 @@ sub export_grp($)
   {
     set($_,$ENV{$_});
   }
+  trace::hdr("imported process environment");
+  trace::hash_list(\%LOC_ENV);
   #print "DBG:sbx_cfg".Dumper($sbx_cfg)."\n";
   #TODO mbv export
+  trace::hdr("importing cfg environment");
   foreach my $var( keys %$sbx_cfg ) {
     next if not $var =~ /^env./;
     my $env_var=$var; $env_var =~ s/^env\.//;
@@ -368,7 +410,7 @@ sub set($$)
     my($var,$val)=@_;
     $var = uc $var if SBX::get_type() eq 'dos';
     $LOC_ENV{$var}=$val;
-    print"DBG:set()".SBX::get_type()."  LOC_ENV{$var}='$val'\n";
+    trace::dbg( sprintf("  LOC_ENV(%s) %-20s  = %s",SBX::get_type(),$var,$val));
 }
 
 sub get($)
@@ -391,7 +433,7 @@ sub import($)
         || m/^HOME$/
       ){
       #TMP en TEMP are prepended by pwd
-      print "FOUND TEMP=$_=$ENV{$_},skip\n";
+      trace::dbg( "FOUND and skipping $_=$ENV{$_}");
       next;
     }
     #$ENV{$_}=$env->{$_};
@@ -400,7 +442,7 @@ sub import($)
     delete $ENV{uc $_} if $ENV{uc $_};#voorkom name clashes
     $ENV{$_}=$env->{$_};
     set($_,$env->{$_});
-    print "DBG:ENV:import glob $_  = loc $ENV{$_} =  val $env->{$_}\n";
+    #print "DBG:ENV:import glob $_  = loc $ENV{$_} =  val $env->{$_}\n";
   }
 
 }
@@ -413,10 +455,11 @@ sub start($)
 {
   my $group=shift;
   my $env=CONFIG::get_group($group);
+  trace::hdr('starting shell');
   #TODO start shell
-  die "Can not find dir '$ENV{SBXROOT}', verify your SBXROOT?\n" if not -d $ENV{SBXROOT};
+  die "Can not find dir '$LOC_ENV{SBXROOT}', verify your SBXROOT?\n" if not -d $LOC_ENV{SBXROOT};
+  chdir( "$LOC_ENV{SBXROOT}" ) or die "$!";
   #print "DBG:chdir to '$ENV{SBXROOT}'\n";
-  chdir( "$ENV{SBXROOT}" ) or die "$!";
   for( $env->{'cfg.type'} ){
     shell_sh()  if /^sh$/ ;
     shell_dos()  if /^dos$/ ;
@@ -438,8 +481,9 @@ sub get_winpath($)
     print "to '$path' \n";
     return $path;
 }
-sub set_windows_env()
+sub tune_windows_env()
 {
+    trace::hdr("Tuning windows environment");
     die "ERR:env USER not set" if not $ENV{USER};
     #set('APPDATA',get_winpath("/Users/$ENV{USER}/AppData/Roaming")) if not $ENV{APPDATA};
     #TODO bypass preserve cases
@@ -526,7 +570,7 @@ sub shell_rlwrap()
     #my $PATH=$env{Path};
     $LOC_ENV{PATH}=$LOC_ENV{PATH}.';'.$env{Path};
     #$env{Path}=~ s/%SystemRoot%/C:\\windows/g;
-    set_windows_env();
+    tune_windows_env();
     ENV::sub_win_env();
     #$SBXROOT="'$SBXROOT'";
     #$SBXROOT=~ s#\\#/#g;
@@ -547,25 +591,30 @@ sub shell_rlwrap()
 
 sub shell_dos()
 {
-    print "DBG:enter shell_dos()\n";
+    trace::hdr( "start shell::DOS");
     my $PATH="";
     $PATH=$LOC_ENV{PATH};
 
+    trace::hdr( "import windows user session environment");
     my %env=Win::Query( 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment');
-    $PATH.=":".$env{Path} if $env{Path};
+    $PATH.=";".$env{Path} if $env{Path};
     ENV::import(\%env);
 
+    trace::hdr( "import windows system environment");
     %env=Win::Query( 'HKCU\Environment');
-    $PATH.=":".$env{Path} if $env{Path};
+    $PATH.=";".$env{Path} if $env{Path};
     ENV::import(\%env);
 
+    trace::hdr( "import windows user environment");
     %env=Win::Query( 'HKCU\Volatile Environment');
-    $PATH.=":".$env{Path} if $env{Path};
+    $PATH.=";".$env{Path} if $env{Path};
     ENV::import(\%env);
 
-    set_windows_env();
+    tune_windows_env();
 
-    $LOC_ENV{PATH}=$PATH;
+    #$LOC_ENV{PATH}=$PATH;
+    #TODO why?
+    ENV::set('PATH',$PATH);;
     ENV::sub_win_env();
     ENV::export();
 
@@ -631,7 +680,7 @@ sub set_type()
 {
   my $sbx=$CFG{$ENV{SBX}};
   $type=$sbx->{'cfg.type'};
-  print "DBG: type=$sbx->{'cfg.type'};";
+  trace::dbg( "type=$sbx->{'cfg.type'};");
 }
 #
 # Starting procedure SBX
@@ -639,11 +688,11 @@ sub start($)
 {
   my $SBX=shift;
   $ENV{SBX}=$SBX;
-  print "choice=$SBX\n";
+  trace::dbg( "choice=$SBX");
   CONFIG::inject($SBX);  #inject cfg dependencies
   ENV::export_grp($SBX); #export cfg env to LOC_ENV
   ENV::sub_vars($SBX);   #substitute vars in LOC_ENV
-  ENV::export();     #export LOC_ENV to ENV
+  #ENV::export();     #export LOC_ENV to ENV
   ENV::start($SBX);
 }
 #
@@ -660,7 +709,7 @@ if( $ENV{SBX} ) {
 CONFIG::import();#import .sbxconfig --> %CFG
 for( $ARGV[0] ){
   chomp;
-  print "argv is '$_'\n";
+  trace::dbg( "argv is '$_'" );
   last if not length $_;
 	/^info$/ and do { SBX::info(); exit 0;};
 	/^ls$/   and do { SBX::ls()  ; exit 0;}; 
