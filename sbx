@@ -124,7 +124,7 @@ sub title(@)
 #Registry stuff
 #
 package Win;
-use Data::Dumper;
+#use Data::Dumper;
 #use Win32::Registry;
 my $reg='/cygdrive/c/Windows/System32/reg.exe';
 #REG QUERY "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /s 
@@ -171,7 +171,7 @@ sub set_env($$)
 #CONFIG
 #
 package CONFIG;
-use Data::Dumper;
+#use Data::Dumper;
 
 my %CFG=();
 sub  trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
@@ -298,7 +298,7 @@ sub menu()
 #Environment
 #
 package ENV;
-use Data::Dumper;
+#use Data::Dumper;
 my %LOC_ENV=();
 
 #
@@ -624,7 +624,7 @@ sub shell_dos()
 # SBX utilities
 #
 package SBX;
-use Data::Dumper;
+#use Data::Dumper;
 sub ls()
 {
 	print "Sandbox list:\n";
@@ -699,7 +699,7 @@ sub start($)
 # MAIN
 # 
 package MAIN;
-use Data::Dumper;
+#use Data::Dumper;
 
 if( $ENV{SBX} ) {
   print "Inside sandbox! Name is SBX='$ENV{SBX}'\n";
